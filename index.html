@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VRS Survey Notes - Offline App</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', system-ui, sans-serif; }
+    .font-mono { font-family: 'JetBrains Mono', monospace; }
+    /* スマートフォン等で縦横のスクロールバーを非表示にする */
+    @media (max-width: 1024px) {
+      ::-webkit-scrollbar {
+        width: 0px !important;
+        height: 0px !important;
+        display: none !important;
+      }
+      * {
+        -ms-overflow-style: none !important;
+        scrollbar-width: none !important;
+      }
+    }
+  </style>
+</head>
+<body class="min-h-screen bg-slate-100 flex items-center justify-center py-0 sm:py-8 antialiased text-slate-900">
+  <div class="w-full max-w-md bg-white min-h-screen sm:min-h-[800px] sm:rounded-2xl shadow-xl flex flex-col justify-between overflow-hidden relative border border-black">
+    
+    <!-- 1. ヘッダー -->
+    <header class="bg-gradient-to-r from-blue-600 via-indigo-600 to-indigo-700 text-white px-4 py-3 flex flex-col gap-3 shadow-md z-10">
+      <div class="flex justify-between items-center w-full">
+        <div class="flex items-center gap-1.5">
+          <span class="text-indigo-200 animate-pulse text-lg">📈</span>
+          <h1 class="text-base sm:text-lg font-black tracking-wider uppercase">VRS観測 notes</h1>
+        </div>
+        <button onclick="toggleLimitsModal(true)" class="p-1 text-sm bg-white/10 hover:bg-white/20 active:scale-95 rounded-lg transition-all">⚙️ 設定</button>
+      </div>
+      
+      <div class="grid grid-cols-3 gap-1.5">
+        <button onclick="triggerExcelImport()" class="bg-emerald-500 text-white py-1.5 rounded-lg text-[10px] font-black shadow-md hover:bg-emerald-600 flex items-center justify-center gap-0.5 active:scale-95 transition-all">📥 Excel読込</button>
+        <input type="file" id="standalone-file-input" onchange="handleExcelImport(event)" accept=".xlsx, .xls" class="hidden" />
+        <button onclick="exportExcel()" class="bg-white text-indigo-700 py-1.5 rounded-lg text-[10px] font-black shadow-md hover:bg-slate-50 flex items-center justify-center gap-0.5 active:scale-95 transition-all">📤 Excel出力</button>
+        <button onclick="toggleClearModal(true)" class="bg-rose-500 text-white py-1.5 rounded-lg text-[10px] font-black shadow-md hover:bg-rose-600 flex items-center justify-center gap-0.5 active:scale-95 transition-all">🗑️ 全クリア</button>
+      </div>
+    </header>
+
+    <!-- 2. メイン部 -->
+    <main class="p-3 space-y-4 flex-1 overflow-y-auto text-xs">
+      
+      <!-- 観測値入力 -->
+      <div class="border border-black rounded-xl p-3 bg-slate-50/50 shadow-sm space-y-3">
+        <h2 class="text-xs font-black text-slate-700 tracking-wider">➕ 観測値入力</h2>
+        
+        <div class="grid grid-cols-12 gap-2 text-[10px] font-bold text-slate-400">
+          <div class="col-span-4">
+            <span class="block mb-0.5">No.</span>
+            <input type="text" id="form-no" placeholder="0001" onblur="handleNoBlur()" class="w-full border border-black rounded-lg p-2 font-mono text-center bg-white text-slate-800 text-sm focus:border-blue-500 outline-none" />
+          </div>
+          <div class="col-span-3">
+            <span class="block mb-0.5">セッション</span>
+            <input type="text" id="form-session" value="A" class="w-full border border-black rounded-lg p-2 font-black text-center bg-white text-indigo-700 text-sm focus:border-blue-500 outline-none uppercase" maxlength="2" />
+          </div>
+          <div class="col-span-5">
+            <span class="block mb-0.5">観測点名</span>
+            <input type="text" id="form-name" placeholder="点名" class="w-full border border-black rounded-lg p-2 font-bold text-center bg-white text-slate-800 text-sm focus:border-blue-500 outline-none" />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-2 text-[10px] font-bold text-slate-400">
+          <div>
+            <span class="block text-center mb-0.5">ΔX座標 (m)</span>
+            <input type="text" id="form-dx" oninput="handleCoordinateInput('dx', this)" class="w-full border border-black rounded-lg p-2 font-mono text-center bg-white text-slate-800 text-sm focus:border-blue-500 outline-none" />
+          </div>
+          <div>
+            <span class="block text-center mb-0.5">ΔY座標 (m)</span>
+            <input type="text" id="form-dy" oninput="handleCoordinateInput('dy', this)" class="w-full border border-black rounded-lg p-2 font-mono text-center bg-white text-slate-800 text-sm focus:border-blue-500 outline-none" />
+          </div>
+          <div>
+            <span class="block text-center mb-0.5">標高 (m)</span>
+            <input type="text" id="form-dz" oninput="handleCoordinateInput('dz', this)" class="w-full border border-black rounded-lg p-2 font-mono text-center bg-white text-slate-800 text-sm focus:border-blue-500 outline-none" />
+          </div>
+        </div>
+
+        <button onclick="addPoint()" class="w-full bg-blue-600 text-white font-black py-2.5 rounded-xl shadow-md hover:bg-blue-700 active:scale-95 transition-all text-xs">計算シートへ追加</button>
+      </div>
+
+      <!-- 計算シート -->
+      <div class="border border-black rounded-xl p-2.5 bg-white shadow-sm space-y-2">
+        <h2 class="text-xs font-black text-slate-500 uppercase tracking-widest pl-1">📋 計算シート</h2>
+        <div class="w-full overflow-x-auto select-none">
+          <table class="w-full min-w-[320px] table-fixed border-collapse text-center">
+            <thead>
+              <tr class="bg-slate-50 text-slate-400 font-extrabold border-b border-black text-[10px]">
+                <th class="w-[8%] py-1.5">点No.</th>
+                <th class="w-[7%]">セッ</th>
+                <th class="w-[13%]">点名</th>
+                <th class="w-[22%]">ΔX (m)</th>
+                <th class="w-[22%]">ΔY (m)</th>
+                <th class="w-[22%]">標高 (m)</th>
+                <th class="w-[6%]"></th> 
+              </tr>
+            </thead>
+            <tbody id="points-tbody" class="divide-y divide-black text-xs"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 較差判定 -->
+      <div class="border border-black rounded-xl p-3 bg-white shadow-sm space-y-2.5">
+        <div class="flex justify-between items-center border-b border-black pb-1.5">
+          <h2 class="text-xs font-black text-slate-500 uppercase tracking-widest">🔄 較差判定</h2>
+          <button onclick="addManualComparisonRow()" class="bg-purple-50 text-purple-700 font-extrabold px-2.5 py-1 rounded-lg text-[10px] hover:bg-purple-100 active:scale-95 transition-all border border-black">➕ 判定追加</button>
+        </div>
+        <div id="comparisons-container" class="space-y-2.5"></div>
+      </div>
+
+     </main>
+
+    <!-- Modal 1: Settings -->
+    <div id="limits-modal" class="hidden absolute inset-0 bg-black/60 flex items-center justify-center p-4 z-50 backdrop-blur-[2px]">
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-xs border border-black overflow-hidden">
+        <div class="bg-slate-50 px-4 py-3 flex justify-between items-center border-b border-black">
+          <span class="text-slate-700 font-extrabold text-xs">⚙️ 制限値</span>
+          <button onclick="toggleLimitsModal(false)" class="text-slate-400 text-lg">✕</button>
+        </div>
+        <div class="p-4 space-y-4 text-xs">
+          <div>
+            <label class="block text-slate-600 font-bold mb-1">X,Y制限値 (h) [mm]</label>
+            <input type="number" id="limit-h" class="w-full border border-black rounded-xl px-3 py-2 text-center font-black text-slate-800 bg-slate-50 focus:bg-white outline-none transition-all" />
+          </div>
+          <div>
+            <label class="block text-slate-600 font-bold mb-1">標高制限値 (v) [mm]</label>
+            <input type="number" id="limit-v" class="w-full border border-black rounded-xl px-3 py-2 text-center font-black text-slate-800 bg-slate-50 focus:bg-white outline-none transition-all" />
+          </div>
+          <button onclick="saveLimits()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-extrabold py-2.5 rounded-xl shadow-md text-center active:scale-95 transition-all">設定を保存して閉じる</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal 2: Clear -->
+    <div id="clear-modal" class="hidden absolute inset-0 bg-black/60 flex items-center justify-center p-4 z-50 backdrop-blur-[2px]">
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-xs border border-black overflow-hidden">
+        <div class="bg-rose-50 px-4 py-3 flex justify-between items-center border-b border-black">
+          <span class="text-rose-700 font-extrabold text-xs">⚠️ 全て消去しますか？</span>
+          <button onclick="toggleClearModal(false)" class="text-slate-400 text-lg">✕</button>
+        </div>
+        <div class="p-4 space-y-4 text-xs">
+          <p class="text-slate-600 leading-relaxed text-center font-bold">全てのデータを完全に削除します。</p>
+          <div class="grid grid-cols-2 gap-2">
+            <button onclick="toggleClearModal(false)" class="bg-slate-100 text-slate-700 font-bold py-2 rounded-xl text-center border border-black">中止</button>
+            <button onclick="clearAllData()" class="bg-rose-600 text-white font-bold py-2 rounded-xl text-center border border-black">消去</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- フッター -->
+    <footer class="bg-slate-800 text-slate-400 text-center py-2.5 text-[10px] border-t border-black">VRS Survey Notes © Mobile GIS</footer>
+  </div>
+
+  <script>
+    const INITIAL_POINTS = [];
+    const INITIAL_LIMITS = {"h":20,"v":30};
+    const INITIAL_CUSTOM_SELECTIONS = [];
+
+    let STATE = {
+      points: INITIAL_POINTS.length ? INITIAL_POINTS : [],
+      limits: INITIAL_LIMITS ? INITIAL_LIMITS : { h: 20, v: 30 },
+      currentSession: 'A',
+      customSelections: INITIAL_CUSTOM_SELECTIONS.length ? INITIAL_CUSTOM_SELECTIONS : []
+    };
+
+    function padNo(val) {
+      const trimmed = String(val).trim();
+      if (/^\d+$/.test(trimmed) && trimmed.length > 0) {
+        return trimmed.padStart(4, '0');
+      }
+      return trimmed;
+    }
+
+    function handleNoBlur() {
+      const el = document.getElementById('form-no');
+      if (el) el.value = padNo(el.value);
+    }
+
+    function applyAutocomplete(inputVal, baseNum) {
+      if (!inputVal || !inputVal.startsWith('.')) return inputVal;
+      if (isNaN(baseNum)) return inputVal;
+      const baseInteger = Math.floor(baseNum);
+      const baseFirstDecimal = Math.floor((baseNum % 1) * 10);
+      const inputFirstDecimal = parseInt(inputVal.charAt(1), 10);
+      if (isNaN(inputFirstDecimal)) return inputVal;
+      let finalInteger = baseInteger;
+      if (baseFirstDecimal === 0 && inputFirstDecimal === 9) {
+        finalInteger = baseInteger - 1;
+      } else if (baseFirstDecimal === 9 && inputFirstDecimal === 0) {
+        finalInteger = baseInteger + 1;
+      }
+      return finalInteger + inputVal;
+    }
+
+    function handleCoordinateInput(field, inputEl) {
+      const value = inputEl.value;
+      if (STATE.points.length > 0 && value.startsWith('.')) {
+        const firstPoint = STATE.points[0];
+        let baseNum = 0;
+        if (field === 'dx') baseNum = firstPoint.x;
+        if (field === 'dy') baseNum = firstPoint.y;
+        if (field === 'dz') baseNum = firstPoint.z;
+        inputEl.value = applyAutocomplete(value, baseNum);
+      }
+    }
+
+    function initApp() {
+      const savedPoints = localStorage.getItem('vrs_points');
+      if (savedPoints) {
+        try { STATE.points = JSON.parse(savedPoints); } catch(e) {}
+      }
+      const savedLimits = localStorage.getItem('vrs_limits');
+      if (savedLimits) {
+        try { STATE.limits = JSON.parse(savedLimits); } catch(e) {}
+      }
+
+      document.getElementById('limit-h').value = STATE.limits.h;
+      document.getElementById('limit-v').value = STATE.limits.v;
+
+      const lastPoint = STATE.points[STATE.points.length - 1];
+      STATE.currentSession = lastPoint ? getNextSession(lastPoint.session) : 'A';
+      document.getElementById('form-session').value = STATE.currentSession;
+
+      updateCustomSelectionsFromPoints();
+      saveStateAndRender();
+    }
+
+    function getNextSession(char) {
+      const code = char.toUpperCase().charCodeAt(0);
+      if (code >= 65 && code < 90) { return String.fromCharCode(code + 1); }
+      return 'A';
+    }
+
+    function saveStateAndRender() {
+      localStorage.setItem('vrs_points', JSON.stringify(STATE.points));
+      localStorage.setItem('vrs_limits', JSON.stringify(STATE.limits));
+      renderPoints();
+      renderComparisons();
+    }
+
+    function renderPoints() {
+      const tbody = document.getElementById('points-tbody');
+      if (!tbody) return;
+
+      if (STATE.points.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="py-6 text-xs text-slate-400 font-medium col-span-7">観測データが登録されていません</td></tr>';
+        return;
+      }
+
+      let html = '';
+      STATE.points.forEach((p) => {
+        const renderCell = (val, type, field) => {
+          const cellId = 'cell-' + p.id + '-' + field;
+          if (type === 'number') {
+            const num = typeof val === 'number' ? val : parseFloat(String(val));
+            const formatted = isNaN(num) ? (0).toFixed(3) : num.toFixed(3);
+            const parts = formatted.split('.');
+            
+            let displayHtml = '';
+            if (formatted.length <= 7) {
+              displayHtml = '<span class="text-[12px] font-mono font-black text-slate-900 tracking-tight text-right w-full block pr-0.5">' + formatted + '</span>';
+            } else {
+              displayHtml = '<div class="flex flex-col items-end leading-[0.95] text-[12px] font-black text-slate-900 tracking-tighter w-full pr-0.5 select-none font-mono"><span>' + parts[0] + '</span><span>.' + parts[1] + '</span></div>';
+            }
+            return '<div id="' + cellId + '" onclick="startEditCell(\'' + p.id + '\', \'' + field + '\', ' + val + ', \'' + cellId + '\')" class="min-h-[30px] flex items-center justify-end hover:bg-slate-50 pr-0.5 cursor-pointer">' + displayHtml + '</div>';
+          } else {
+            const extraClass = field === 'session' ? 'text-blue-600 font-black text-center' : field === 'no' ? 'font-bold text-slate-500 text-center' : 'font-bold text-slate-800 text-left pl-1';
+            const sizeClass = field === 'name' ? 'text-[11.5px] truncate' : 'text-xs';
+            const displayHtml = '<span class="' + extraClass + ' ' + sizeClass + '">' + val + '</span>';
+            return '<div id="' + cellId + '" onclick="startEditCell(\'' + p.id + '\', \'' + field + '\', \'' + String(val).replace(/'/g, "\'") + '\', \'' + cellId + '\')" class="min-h-[30px] flex items-center justify-center hover:bg-slate-50 cursor-pointer">' + displayHtml + '</div>';
+          }
+        };
+
+        html += '<tr class="hover:bg-slate-50"><td class="p-0.5">' + renderCell(p.no, 'text', 'no') + '</td><td class="p-0.5">' + renderCell(p.session, 'text', 'session') + '</td><td class="p-0.5">' + renderCell(p.name, 'text', 'name') + '</td><td class="p-0.5">' + renderCell(p.x, 'number', 'x') + '</td><td class="p-0.5">' + renderCell(p.y, 'number', 'y') + '</td><td class="p-0.5">' + renderCell(p.z, 'number', 'z') + '</td><td class="py-0.5"><button onclick="removePoint(\'' + p.id + '\')" class="text-slate-300 hover:text-rose-500 transition-colors p-1 flex items-center justify-center mx-auto">🗑️</button></td></tr>';
+      });
+      tbody.innerHTML = html;
+    }
+
+    function startEditCell(id, field, value, cellId) {
+      const container = document.getElementById(cellId);
+      if (!container || container.querySelector('input')) return;
+
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.value = value;
+      
+      let inputClass = 'w-full bg-blue-50 border-2 border-blue-500 rounded p-0.5 text-slate-800 text-xs font-bold focus:outline-none';
+      if (field === 'x' || field === 'y' || field === 'z') {
+        inputClass += ' text-right font-mono';
+      } else if (field === 'session' || field === 'no') {
+        inputClass += ' text-center';
+      } else {
+        inputClass += ' text-left pl-1';
+      }
+      
+      input.className = inputClass;
+      container.innerHTML = '';
+      container.appendChild(input);
+      input.focus();
+
+      if (field !== 'x' && field !== 'y' && field !== 'z') {
+        input.select();
+      }
+
+      function finishEdit() {
+        const newValue = input.value;
+        updatePointField(id, field, newValue);
+      }
+
+      input.onblur = finishEdit;
+      input.onkeydown = function(e) {
+        if (e.key === 'Enter') {
+          input.onblur = null;
+          finishEdit();
+        } else if (e.key === 'Escape') {
+          input.onblur = null;
+          renderPoints();
+        }
+      };
+    }
+
+    function updatePointField(id, field, value) {
+      const p = STATE.points.find(item => item.id === id);
+      if (p) {
+        if (field === 'x' || field === 'y' || field === 'z') {
+          let parsed = parseFloat(value);
+          p[field] = isNaN(parsed) ? 0 : parsed;
+        } else if (field === 'no') {
+          p[field] = padNo(value);
+        } else if (field === 'session') {
+          p[field] = value.trim().toUpperCase();
+        } else {
+          p[field] = value.trim();
+        }
+      }
+      updateCustomSelectionsFromPoints();
+      saveStateAndRender();
+    }
+
+    function removePoint(id) {
+      STATE.points = STATE.points.filter(p => p.id !== id);
+      updateCustomSelectionsFromPoints();
+      saveStateAndRender();
+    }
+
+    function updateCustomSelectionsFromPoints() {
+      if (!STATE.points || STATE.points.length < 2) {
+        STATE.customSelections = [];
+        return;
+      }
+
+      const basePoint = STATE.points[0];
+      const filtered = STATE.customSelections.filter(sel => 
+        STATE.points.some(p => p.id === sel.rowId) || (sel.id && sel.id.startsWith('manual-'))
+      );
+
+      // Separating non-empty rows and empty rows so we can keep empty rows at the end
+      const validItems = filtered.filter(item => !(item.from === '' && item.to === ''));
+      const emptyItems = filtered.filter(item => item.from === '' && item.to === '');
+
+      const updated = [...validItems];
+
+      for (let i = 1; i < STATE.points.length; i++) {
+        const currentPoint = STATE.points[i];
+        const baseName = basePoint ? basePoint.name : '';
+        const baseSession = basePoint ? basePoint.session : '';
+        const currentSession = currentPoint ? currentPoint.session : '';
+
+        const exists = updated.some(item => 
+          item.rowId === currentPoint.id || 
+          (item.name === baseName && item.from === baseSession && item.to === currentSession)
+        );
+
+        if (!exists) {
+          updated.push({
+            id: 'comparison-' + currentPoint.id,
+            rowId: currentPoint.id,
+            name: baseName,
+            from: baseSession,
+            to: currentSession
+          });
+        }
+      }
+
+      if (emptyItems.length > 0) {
+        updated.push(...emptyItems);
+      } else {
+        updated.push({
+          id: 'manual-default-' + Math.random().toString(36).substring(2),
+          name: '',
+          from: '',
+          to: ''
+        });
+      }
+
+      STATE.customSelections = updated;
+    }
+
+    function getComputedComparisons() {
+      if (!STATE.customSelections) return [];
+
+      const availableNames = Array.from(new Set(STATE.points.map(p => p.name))).sort();
+      const defaultName = availableNames[0] || '';
+
+      return STATE.customSelections.map(sel => {
+        const activeName = sel.name || defaultName;
+        if (!activeName || !sel.from || !sel.to) {
+          return Object.assign({}, sel, { name: activeName, calculated: false });
+        }
+
+        const pA = STATE.points.find(p => p.name === activeName && p.session === sel.from);
+        const pB = STATE.points.find(p => p.name === activeName && p.session === sel.to);
+
+        if (!pA || !pB) {
+          return Object.assign({}, sel, { name: activeName, calculated: false });
+        }
+
+        const numAX = parseFloat(pA.x);
+        const numAY = parseFloat(pA.y);
+        const numAZ = parseFloat(pA.z);
+        const numBX = parseFloat(pB.x);
+        const numBY = parseFloat(pB.y);
+        const numBZ = parseFloat(pB.z);
+
+        if (isNaN(numAX) || isNaN(numAY) || isNaN(numAZ) || isNaN(numBX) || isNaN(numBY) || isNaN(numBZ)) {
+          return Object.assign({}, sel, { name: activeName, calculated: false });
+        }
+
+        return Object.assign({}, sel, {
+          name: activeName,
+          calculated: true,
+          dx: (numBX - numAX) * 1000,
+          dy: (numBY - numAY) * 1000,
+          dz: (numBZ - numAZ) * 1000
+        });
+      });
+    }
+
+    function getSortedComparisons() {
+      return getComputedComparisons();
+    }
+
+    function renderComparisons() {
+      const container = document.getElementById('comparisons-container');
+      if (!container) return;
+
+      const sorted = getSortedComparisons();
+      const availableSessions = Array.from(new Set(STATE.points.map(p => p.session))).sort();
+      const availableNames = Array.from(new Set(STATE.points.map(p => p.name))).sort();
+
+      if (sorted.length === 0) {
+        container.innerHTML = '<div class="text-center py-5 text-xs text-slate-400 border border-dashed border-black rounded-xl bg-slate-50/20 font-medium font-sans">2セッション以上の同名データ検出、もしくは「判定追加」で較差チェックが自動始動します</div>';
+        return;
+      }
+
+      let html = '';
+      sorted.forEach(c => {
+        const getSessionOptions = (selectedVal) => {
+          let optionsStr = '<option value="">-</option>';
+          availableSessions.forEach(s => {
+            optionsStr += '<option value="' + s + '" ' + (s === selectedVal ? 'selected' : '') + '>' + s + '</option>';
+          });
+          return optionsStr;
+        };
+
+        const getNameOptions = (selectedVal) => {
+          let optionsStr = '<option value="">点名選択..</option>';
+          availableNames.forEach(n => {
+            optionsStr += '<option value="' + n + '" ' + (n === selectedVal ? 'selected' : '') + '>' + n + '</option>';
+          });
+          return optionsStr;
+        };
+
+        const checkIsOver = (val, type) => {
+          if (val === undefined || isNaN(val)) return false;
+          const roundedMm = Math.abs(Math.round(val));
+          const limitVal = type === 'v' ? STATE.limits.v : STATE.limits.h;
+          return roundedMm > limitVal;
+        };
+
+        const renderBadge = (val, type, label, calculated) => {
+          if (!calculated || val === undefined || isNaN(val)) {
+            return '<div class="flex flex-col items-center justify-center py-1 px-1 rounded-md border border-black bg-slate-50/50 text-[10px] font-mono text-slate-300 w-full"><span class="text-[8px] text-slate-400 font-sans">' + label + '</span><div class="leading-tight text-center"><div class="text-xs font-bold text-slate-300">-</div><div class="text-[8px]">( - )</div></div></div>';
+          }
+
+          const isOver = checkIsOver(val, type);
+          const finalMmValue = Math.round(val);
+          const absStr = Math.abs(finalMmValue).toString();
+          const relativeStr = finalMmValue >= 0 ? '+' + finalMmValue : String(finalMmValue);
+
+          return '<div class="flex flex-col items-center justify-center py-1 px-0.5 rounded-lg border font-mono w-full shadow-sm ' + (isOver ? 'bg-rose-50 border-rose-300 text-rose-700 animate-pulse' : 'bg-slate-50 border-black text-slate-800') + '"><span class="text-[8px] font-sans font-medium mb-0.5 ' + (isOver ? 'text-rose-500' : 'text-slate-400') + '">' + label + '</span><div class="text-center leading-none"><div class="text-xs font-black tracking-tight"><span>' + absStr + '</span>' + (isOver ? ' ⚠️' : '') + '</div><div class="text-[8px] opacity-80 mt-0.5 ' + (isOver ? 'text-rose-500' : 'text-slate-500') + '">(' + relativeStr + ')</div></div></div>';
+        };
+
+        html += '<div class="border border-black rounded-xl p-2 flex items-center justify-between bg-slate-50/50 gap-1.5"><div class="flex items-center gap-1.5 w-[42%] border-r border-black pr-1"><div class="flex flex-col items-center justify-center border border-black rounded bg-white w-9 py-0.5"><select onchange="updateCustomRow(\'' + c.id + '\', \'from\', this.value)" class="text-[10px] font-black text-slate-700 font-mono bg-transparent text-center focus:outline-none w-full">' + getSessionOptions(c.from) + '</select><div class="w-[80%] border-t border-dashed border-black my-0.5"></div><select onchange="updateCustomRow(\'' + c.id + '\', \'to\', this.value)" class="text-[10px] font-black text-slate-700 font-mono bg-transparent text-center focus:outline-none w-full">' + getSessionOptions(c.to) + '</select></div><div class="flex flex-col flex-1 min-w-0"><select onchange="updateCustomRow(\'' + c.id + '\', \'name\', this.value)" class="text-xs font-black text-slate-800 bg-white border border-black rounded px-1 py-1 w-full focus:outline-none truncate">' + getNameOptions(c.name) + '</select></div></div><div class="flex items-center gap-1 w-[58%] pl-1 justify-end">' + renderBadge(c.dx, 'h', 'ΔX (mm)', c.calculated) + ' ' + renderBadge(c.dy, 'h', 'ΔY (mm)', c.calculated) + ' ' + renderBadge(c.dz, 'v', 'ΔH (mm)', c.calculated) + '<button onclick="removeComparisonRow(\'' + c.id + '\')" class="text-slate-300 hover:text-rose-500 transition-colors p-1">🗑️</button></div></div>';
+      });
+      container.innerHTML = html;
+    }
+
+    function addPoint() {
+      const noInput = document.getElementById('form-no');
+      const sessionInput = document.getElementById('form-session');
+      const nameInput = document.getElementById('form-name');
+      const dxInput = document.getElementById('form-dx');
+      const dyInput = document.getElementById('form-dy');
+      const dzInput = document.getElementById('form-dz');
+
+      const no = noInput.value.trim();
+      const name = nameInput.value.trim();
+      const session = sessionInput.value.trim().toUpperCase() || 'A';
+      const x = parseFloat(dxInput.value) || 0;
+      const y = parseFloat(dyInput.value) || 0;
+      const z = parseFloat(dzInput.value) || 0;
+
+      if (!no || !name) {
+        alert("点番号と点名を入力してください。");
+        return;
+      }
+
+      const newPoint = {
+        id: Math.random().toString(36).substring(2),
+        no: padNo(no),
+        session: session,
+        name: name,
+        x: x,
+        y: y,
+        z: z
+      };
+
+      STATE.points.push(newPoint);
+      STATE.currentSession = getNextSession(session);
+      sessionInput.value = STATE.currentSession;
+
+      dxInput.value = '';
+      dyInput.value = '';
+      dzInput.value = '';
+
+      updateCustomSelectionsFromPoints();
+      saveStateAndRender();
+    }
+
+    function removePoint(id) {
+      STATE.points = STATE.points.filter(p => p.id !== id);
+      updateCustomSelectionsFromPoints();
+      saveStateAndRender();
+    }
+
+    function clearAllData() {
+      STATE.points = [];
+      STATE.currentSession = 'A';
+      document.getElementById('form-no').value = '';
+      document.getElementById('form-name').value = '';
+      document.getElementById('form-dx').value = '';
+      document.getElementById('form-dy').value = '';
+      document.getElementById('form-dz').value = '';
+      document.getElementById('form-session').value = 'A';
+      STATE.customSelections = [];
+      toggleClearModal(false);
+      saveStateAndRender();
+    }
+
+    function addManualComparisonRow() {
+      STATE.customSelections.push({
+        id: 'manual-' + Math.random().toString(36).substring(2),
+        name: '',
+        from: '',
+        to: ''
+      });
+      saveStateAndRender();
+    }
+
+    function removeComparisonRow(id) {
+      STATE.customSelections = STATE.customSelections.filter(c => c.id !== id);
+      saveStateAndRender();
+    }
+
+    function updateCustomRow(id, field, value) {
+      const sel = STATE.customSelections.find(c => c.id === id);
+      if (sel) {
+        sel[field] = value;
+        
+        // 常に空白行は最終行に固定・無ければ自動追加
+        const hasEmptyManual = STATE.customSelections.some(item => 
+          (item.id.indexOf('manual-') === 0 || item.id.indexOf('manual-default-') === 0) && 
+          item.from === '' && item.to === ''
+        );
+        if (!hasEmptyManual) {
+          STATE.customSelections.push({
+            id: 'manual-' + Math.random().toString(36).substring(2),
+            name: '',
+            from: '',
+            to: ''
+          });
+        }
+      }
+      saveStateAndRender();
+    }
+
+    function toggleLimitsModal(show) {
+      const m = document.getElementById('limits-modal');
+      if (show) m.classList.remove('hidden');
+      else m.classList.add('hidden');
+    }
+
+    function toggleClearModal(show) {
+      const m = document.getElementById('clear-modal');
+      if (show) m.classList.remove('hidden');
+      else m.classList.add('hidden');
+    }
+
+    function saveLimits() {
+      const hVal = parseFloat(document.getElementById('limit-h').value) || 0;
+      const vVal = parseFloat(document.getElementById('limit-v').value) || 0;
+      STATE.limits.h = hVal;
+      STATE.limits.v = vVal;
+      toggleLimitsModal(false);
+      saveStateAndRender();
+    }
+
+    function triggerExcelImport() {
+      document.getElementById('standalone-file-input').click();
+    }
+
+    function handleExcelImport(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(evt) {
+        try {
+          const data = new Uint8Array(evt.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+          const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+          if (rows.length <= 1) return;
+
+          const importedPoints = [];
+          const importedCustomSelections = [];
+          let parsingPointsSection = true;
+          let lastSession = 'A';
+
+          for (let i = 1; i < rows.length; i++) {
+            const row = rows[i];
+            if (!row) continue;
+            const col0 = String(row[0] || '').trim();
+
+            if (
+              col0 === "【較差判定エリア】" || 
+              col0 === "【較差判定結果】" || 
+              col0 === "比較点名" || 
+              col0 === "データなし" ||
+              (parsingPointsSection && col0 === "")
+            ) {
+              parsingPointsSection = false;
+            }
+
+            if (parsingPointsSection) {
+              const no = col0;
+              const session = String(row[1] || 'A').trim().toUpperCase();
+              const name = String(row[2] || '').trim();
+              const x = parseFloat(row[3]);
+              const y = parseFloat(row[4]);
+              const z = parseFloat(row[5]);
+
+              if (isNaN(x) || isNaN(y) || isNaN(z)) continue;
+
+              if (no && name) {
+                importedPoints.push({ id: Math.random().toString(36).substring(2), no: padNo(no), session: session, name: name, x: x, y: y, z: z });
+                lastSession = session;
+              }
+            } else {
+              if (col0 && col0 !== "【較差判定エリア】" && col0 !== "【較差判定結果】" && col0 !== "比較点名" && col0 !== "-") {
+                const name = col0;
+                const fromVal = String(row[1] || '').trim();
+                const toVal = String(row[2] || '').trim();
+                const from = (fromVal === "-" || !fromVal) ? "" : fromVal;
+                const to = (toVal === "-" || !toVal) ? "" : toVal;
+
+                importedCustomSelections.push({
+                  id: "manual-" + Math.random().toString(36).substring(2),
+                  name: name,
+                  from: from,
+                  to: to
+                });
+              }
+            }
+          }
+
+          if (importedPoints.length > 0) {
+            STATE.points = importedPoints;
+            STATE.currentSession = getNextSession(lastSession);
+            document.getElementById('form-session').value = STATE.currentSession;
+            if (importedCustomSelections.length > 0) {
+              STATE.customSelections = importedCustomSelections;
+            } else {
+              updateCustomSelectionsFromPoints();
+            }
+            saveStateAndRender();
+          } else {
+            alert("有効な観測データが見つかりませんでした。");
+          }
+        } catch (err) {
+          alert("Excelのインポートに失敗しました。");
+        }
+        e.target.value = '';
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    function exportExcel() {
+      if (STATE.points.length === 0) return;
+      const wb = XLSX.utils.book_new();
+      const sheetData = [["No.", "セッション", "観測点名", "X座標", "Y座標", "標高"]];
+
+      STATE.points.forEach(p => {
+        const valX = typeof p.x === 'number' ? p.x.toFixed(3) : parseFloat(String(p.x || 0)).toFixed(3);
+        const valY = typeof p.y === 'number' ? p.y.toFixed(3) : parseFloat(String(p.y || 0)).toFixed(3);
+        const valZ = typeof p.z === 'number' ? p.z.toFixed(3) : parseFloat(String(p.z || 0)).toFixed(3);
+        sheetData.push([p.no, p.session, p.name, parseFloat(valX), parseFloat(valY), parseFloat(valZ)]);
+      });
+
+      sheetData.push([]);
+      sheetData.push([]);
+      sheetData.push(["【較差判定エリア】"]);
+      sheetData.push(["比較点名", "比較元セッション", "比較先セッション", "較差 dX (mm)", "較差 dY (mm)", "較差 dH (mm)", "判定"]);
+
+      const sorted = getSortedComparisons();
+      sorted.forEach(c => {
+        let displayDx = "-";
+        let displayDy = "-";
+        let displayDz = "-";
+
+        if (c.calculated && c.dx !== undefined) {
+          const rounded = Math.round(c.dx);
+          displayDx = Math.abs(rounded) + " (" + (rounded >= 0 ? "+" : "") + rounded + ")";
+        }
+        if (c.calculated && c.dy !== undefined) {
+          const rounded = Math.round(c.dy);
+          displayDy = Math.abs(rounded) + " (" + (rounded >= 0 ? "+" : "") + rounded + ")";
+        }
+        if (c.calculated && c.dz !== undefined) {
+          const rounded = Math.round(c.dz);
+          displayDz = Math.abs(rounded) + " (" + (rounded >= 0 ? "+" : "") + rounded + ")";
+        }
+
+        let finalJudgment = "-";
+        if (c.calculated && c.dx !== undefined && c.dy !== undefined && c.dz !== undefined) {
+          const isHOver = Math.abs(Math.round(c.dx)) > STATE.limits.h || Math.abs(Math.round(c.dy)) > STATE.limits.h;
+          const isVOver = Math.abs(Math.round(c.dz)) > STATE.limits.v;
+          finalJudgment = isHOver || isVOver ? "不合格" : "合格";
+        }
+
+        sheetData.push([
+          c.name || "-",
+          c.from || "-",
+          c.to || "-",
+          displayDx,
+          displayDy,
+          displayDz,
+          finalJudgment
+        ]);
+      });
+
+      const ws = XLSX.utils.aoa_to_sheet(sheetData);
+      ws['!cols'] = [
+        { wch: 10 }, // No. / 比較点名
+        { wch: 10 }, // セッション / 比較元セッション
+        { wch: 10 }, // 観測点名 / 比較先セッション
+        { wch: 11 }, // X座標 / 較差 dX (mm)
+        { wch: 11 }, // Y座標 / 較差 dY (mm)
+        { wch: 11 }, // 標高 / 較差 dH (mm)
+        { wch: 7 }   // 判定
+      ];
+      ws['!margins'] = {
+        left: 0.71, right: 0.71, top: 0.75, bottom: 0.75, header: 0.3, footer: 0.3
+      };
+      ws['!pageSetup'] = {
+        orientation: 'portrait',
+        paperSize: 9, // A4
+        fitToWidth: 1,
+        fitToHeight: 0,
+        fitToPage: true
+      };
+
+      XLSX.utils.book_append_sheet(wb, ws, "計算シート");
+      const firstPointName = STATE.points[0] ? STATE.points[0].name : "";
+      const nameSuffix = firstPointName ? "_" + firstPointName : "";
+      XLSX.writeFile(wb, "VRS観測成果" + nameSuffix + "_" + new Date().toISOString().split('T')[0] + ".xlsx");
+    }
+
+    window.onload = function() {
+      initApp();
+    };
+  </script>
+</body>
+</html>
