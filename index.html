@@ -357,52 +357,34 @@
         return;
       }
 
-      const basePoint = STATE.points[0];
-      const filtered = STATE.customSelections.filter(sel => 
-        STATE.points.some(p => p.id === sel.rowId) || (sel.id && sel.id.startsWith('manual-'))
-      );
+      // 手動で追加された行を保持
+      const manualSelections = STATE.customSelections.filter(sel => sel.id && sel.id.startsWith('manual-'));
+      const updated = [...manualSelections];
 
-      // Separating non-empty rows and empty rows so we can keep empty rows at the end
-      const validItems = filtered.filter(item => !(item.from === '' && item.to === ''));
-      const emptyItems = filtered.filter(item => item.from === '' && item.to === '');
+      const names = Array.from(new Set(STATE.points.map(p => p.name)));
+      names.forEach(name => {
+        // 同じ名前のデータをセッション順に並べ替え
+        const pointsByName = STATE.points.filter(p => p.name === name).sort((a, b) => a.session.localeCompare(b.session));
+        
+        // 1行目（1回目の観測）を基準とする
+        const firstPoint = pointsByName[0];
 
-      const updated = [...validItems];
+        // 2行目以降の各データについて、常に1行目(firstPoint)とのペアを作成
+        for (let i = 1; i < pointsByName.length; i++) {
+          const currPoint = pointsByName[i];
 
-      for (let i = 1; i < STATE.points.length; i++) {
-        const currentPoint = STATE.points[i];
-        const baseName = basePoint ? basePoint.name : '';
-        const baseSession = basePoint ? basePoint.session : '';
-        const currentSession = currentPoint ? currentPoint.session : '';
-
-        const exists = updated.some(item => 
-          item.rowId === currentPoint.id || 
-          (item.name === baseName && item.from === baseSession && item.to === currentSession)
-        );
-
-        if (!exists) {
           updated.push({
-            id: 'comparison-' + currentPoint.id,
-            rowId: currentPoint.id,
-            name: baseName,
-            from: baseSession,
-            to: currentSession
+            id: 'comparison-' + currPoint.id,
+            rowId: currPoint.id,
+            name: name,
+            from: firstPoint.session, // 常に1行目のセッション
+            to: currPoint.session     // 今回の行のセッション
           });
         }
-      }
-
-      if (emptyItems.length > 0) {
-        updated.push(...emptyItems);
-      } else {
-        updated.push({
-          id: 'manual-default-' + Math.random().toString(36).substring(2),
-          name: '',
-          from: '',
-          to: ''
-        });
-      }
+      });
 
       STATE.customSelections = updated;
-    }
+    }   
 
     function getComputedComparisons() {
       if (!STATE.customSelections) return [];
