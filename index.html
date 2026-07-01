@@ -27,7 +27,6 @@
 <body class="min-h-screen bg-slate-100 flex items-center justify-center py-0 sm:py-8 antialiased text-slate-900">
   <div class="w-full max-w-md bg-white min-h-screen sm:min-h-[800px] sm:rounded-2xl shadow-xl flex flex-col justify-between overflow-hidden relative border border-black">
     
-    <!-- 1. ヘッダー -->
     <header class="bg-gradient-to-r from-blue-600 via-indigo-600 to-indigo-700 text-white px-4 py-3 flex flex-col gap-3 shadow-md z-10">
       <div class="flex justify-between items-center w-full">
         <div class="flex items-center gap-1.5">
@@ -45,10 +44,8 @@
       </div>
     </header>
 
-    <!-- 2. メイン部 -->
     <main class="p-3 space-y-4 flex-1 overflow-y-auto text-xs">
       
-      <!-- 観測値入力 -->
       <div class="border border-black rounded-xl p-3 bg-slate-50/50 shadow-sm space-y-3">
         <h2 class="text-xs font-black text-slate-700 tracking-wider">➕ 観測値入力</h2>
         
@@ -85,7 +82,6 @@
         <button onclick="addPoint()" class="w-full bg-blue-600 text-white font-black py-2.5 rounded-xl shadow-md hover:bg-blue-700 active:scale-95 transition-all text-xs">計算シートへ追加</button>
       </div>
 
-      <!-- 計算シート -->
       <div class="border border-black rounded-xl p-2.5 bg-white shadow-sm space-y-2">
         <h2 class="text-xs font-black text-slate-500 uppercase tracking-widest pl-1">📋 計算シート</h2>
         <div class="w-full overflow-x-auto select-none">
@@ -106,7 +102,6 @@
         </div>
       </div>
 
-      <!-- セット間較差判定 -->
       <div class="border border-black rounded-xl p-3 bg-white shadow-sm space-y-2.5">
         <div class="flex justify-between items-center border-b border-black pb-1.5">
           <h2 class="text-xs font-black text-slate-500 uppercase tracking-widest">🔄 セット間較差判定</h2>
@@ -117,7 +112,6 @@
 
      </main>
 
-    <!-- Modal 1: Settings -->
     <div id="limits-modal" class="hidden absolute inset-0 bg-black/60 flex items-center justify-center p-4 z-50 backdrop-blur-[2px]">
       <div class="bg-white rounded-2xl shadow-2xl w-full max-w-xs border border-black overflow-hidden">
         <div class="bg-slate-50 px-4 py-3 flex justify-between items-center border-b border-black">
@@ -138,7 +132,6 @@
       </div>
     </div>
 
-    <!-- Modal 2: Clear -->
     <div id="clear-modal" class="hidden absolute inset-0 bg-black/60 flex items-center justify-center p-4 z-50 backdrop-blur-[2px]">
       <div class="bg-white rounded-2xl shadow-2xl w-full max-w-xs border border-black overflow-hidden">
         <div class="bg-rose-50 px-4 py-3 flex justify-between items-center border-b border-black">
@@ -155,7 +148,6 @@
       </div>
     </div>
 
-    <!-- フッター -->
     <footer class="bg-slate-800 text-slate-400 text-center py-2.5 text-[10px] border-t border-black">VRS Survey Notes © Mobile GIS</footer>
   </div>
 
@@ -200,15 +192,42 @@
       return finalInteger + inputVal;
     }
 
+    // 【追加機能】音声入力による「点」や「全角文字」を半角英数字と「.」に強制クレンジングする
+    function cleanVoiceInput(val) {
+      if (!val) return "";
+      let s = String(val).trim();
+      
+      // 1. 最初が漢字の「点」や「てん」「テン」で始まったら「.」に変える
+      if (s.startsWith('点') || s.startsWith('てん') || s.startsWith('テン')) {
+        s = '.' + s.replace(/^(点|てん|テン)/, '');
+      }
+      
+      // 2. 音声入力されやすい符号の補正
+      s = s.replace(/プラス/g, '+');
+      s = s.replace(/(マイナス|ハイフン|ー|−)/g, '-');
+      
+      // 3. 全角の数字やドット、符号を半角に変換
+      s = s.replace(/[０-９．＋－]/g, function(m) {
+        return String.fromCharCode(m.charCodeAt(0) - 0xFEE0);
+      });
+      
+      // 4. 半角英数字、ドット(.)、プラス(+)、マイナス(-) 以外の文字を完全に排除
+      s = s.replace(/[^0-9\.\+\-]/g, '');
+      return s;
+    }
+
+    // 【修正機能】入力時にリアルタイムでクレンジングを実行し、補完処理へ繋ぐ
     function handleCoordinateInput(field, inputEl) {
-      const value = inputEl.value;
-      if (STATE.points.length > 0 && value.startsWith('.')) {
+      const cleanedValue = cleanVoiceInput(inputEl.value);
+      inputEl.value = cleanedValue;
+
+      if (STATE.points.length > 0 && cleanedValue.startsWith('.')) {
         const firstPoint = STATE.points[0];
         let baseNum = 0;
         if (field === 'dx') baseNum = firstPoint.x;
         if (field === 'dy') baseNum = firstPoint.y;
         if (field === 'dz') baseNum = firstPoint.z;
-        inputEl.value = applyAutocomplete(value, baseNum);
+        inputEl.value = applyAutocomplete(cleanedValue, baseNum);
       }
     }
 
@@ -331,7 +350,8 @@
       const p = STATE.points.find(item => item.id === id);
       if (p) {
         if (field === 'x' || field === 'y' || field === 'z') {
-          let parsed = parseFloat(value);
+          // 計算シートの数値編集時にもクレンジングを入れる
+          let parsed = parseFloat(cleanVoiceInput(value));
           p[field] = isNaN(parsed) ? 0 : parsed;
         } else if (field === 'no') {
           p[field] = padNo(value);
@@ -357,19 +377,14 @@
         return;
       }
 
-      // 手動で追加された行を保持
       const manualSelections = STATE.customSelections.filter(sel => sel.id && sel.id.startsWith('manual-'));
       const updated = [...manualSelections];
 
       const names = Array.from(new Set(STATE.points.map(p => p.name)));
       names.forEach(name => {
-        // 同じ名前のデータをセッション順に並べ替え
         const pointsByName = STATE.points.filter(p => p.name === name).sort((a, b) => a.session.localeCompare(b.session));
-        
-        // 1行目（1回目の観測）を基準とする
         const firstPoint = pointsByName[0];
 
-        // 2行目以降の各データについて、常に1行目(firstPoint)とのペアを作成
         for (let i = 1; i < pointsByName.length; i++) {
           const currPoint = pointsByName[i];
 
@@ -377,8 +392,8 @@
             id: 'comparison-' + currPoint.id,
             rowId: currPoint.id,
             name: name,
-            from: firstPoint.session, // 常に1行目のセッション
-            to: currPoint.session     // 今回の行のセッション
+            from: firstPoint.session,
+            to: currPoint.session
           });
         }
       });
@@ -497,9 +512,11 @@
       const no = noInput.value.trim();
       const name = nameInput.value.trim();
       const session = sessionInput.value.trim().toUpperCase() || 'A';
-      const x = parseFloat(dxInput.value) || 0;
-      const y = parseFloat(dyInput.value) || 0;
-      const z = parseFloat(dzInput.value) || 0;
+      
+      // 送信前にも念のためクレンジングを通す
+      const x = parseFloat(cleanVoiceInput(dxInput.value)) || 0;
+      const y = parseFloat(cleanVoiceInput(dyInput.value)) || 0;
+      const z = parseFloat(cleanVoiceInput(dzInput.value)) || 0;
 
       if (!no || !name) {
         alert("点番号と点名を入力してください。");
@@ -524,12 +541,6 @@
       dyInput.value = '';
       dzInput.value = '';
 
-      updateCustomSelectionsFromPoints();
-      saveStateAndRender();
-    }
-
-    function removePoint(id) {
-      STATE.points = STATE.points.filter(p => p.id !== id);
       updateCustomSelectionsFromPoints();
       saveStateAndRender();
     }
@@ -568,7 +579,6 @@
       if (sel) {
         sel[field] = value;
         
-        // 常に空白行は最終行に固定・無ければ自動追加
         const hasEmptyManual = STATE.customSelections.some(item => 
           (item.id.indexOf('manual-') === 0 || item.id.indexOf('manual-default-') === 0) && 
           item.from === '' && item.to === ''
@@ -751,20 +761,14 @@
 
       const ws = XLSX.utils.aoa_to_sheet(sheetData);
       ws['!cols'] = [
-        { wch: 10 }, // No. / 比較点名
-        { wch: 10 }, // セッション / 比較元セッション
-        { wch: 10 }, // 観測点名 / 比較先セッション
-        { wch: 11 }, // X座標 / 較差 dX (mm)
-        { wch: 11 }, // Y座標 / 較差 dY (mm)
-        { wch: 11 }, // 標高 / 較差 dH (mm)
-        { wch: 7 }   // 判定
+        { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 11 }, { wch: 11 }, { wch: 11 }, { wch: 7 }
       ];
       ws['!margins'] = {
         left: 0.71, right: 0.71, top: 0.75, bottom: 0.75, header: 0.3, footer: 0.3
       };
       ws['!pageSetup'] = {
         orientation: 'portrait',
-        paperSize: 9, // A4
+        paperSize: 9,
         fitToWidth: 1,
         fitToHeight: 0,
         fitToPage: true
